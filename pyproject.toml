@@ -17,6 +17,9 @@ extend-exclude = '''
   | dist
   | logs
   | data
+  # Vendored into NeMo Gym, which enforces ruff at line-length 119. Formatting it
+  # with black/88 here would break byte-identity with the copy Gym's CI lints.
+  | multilingual_if
 )/
 '''
 
@@ -44,7 +47,8 @@ exclude = [
     ".venv",
     ".tox",
     "logs",
-    "data"
+    "data",
+    "multilingual_if"
 ]
 
 [tool.mypy]
