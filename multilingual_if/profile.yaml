@@ -1,0 +1,531 @@
+# IFEval-G (54 ids) carry-over profile for Latin / Cyrillic / Greek scripts.
+#
+# Checkers this describes: verifiable-instructions == open_instruct/IFEvalG, used by
+# NeMo Gym resources_servers/instruction_following and (25-id subset) by IFDecorator
+# modules/_vendor/ifeval.
+#
+# status:
+#   ok        - carries over unchanged once the listed global patches are applied
+#   localize  - semantics fine, a literal must come from language_profiles
+#   patch     - needs a code change in the checker or its util
+#   exclude   - do not sample, do not verify
+#
+# Consumed twice:
+#   verification -> which ids the resources server may score, and with which fix
+#   synthesis    -> which ids w4_evol may sample, and with which per-language args
+
+# ===========================================================================
+# GLOBAL PATCHES - apply once; these repair most `patch` rows below.
+# ===========================================================================
+global_patches:
+
+  G1_nfc_normalize:
+    what: >
+      unicodedata.normalize("NFC", text) on the response AND on every kwarg string,
+      at the entry point of check_following.
+    why: >
+      MEASURED. count_words on NFD input inflates badly, because Python's \w
+      excludes combining marks (Unicode categories Mn/Mc).
+      "zazolc gesla jazn" (pl, accented) NFC=3 words NFD=8;
+      "cafe resume naive" (fr, accented) NFC=3 NFD=5;
+      "kalimera kosme" (el, accented) NFC=2 NFD=4;
+      "yozhik poshyol" (ru, with yo) NFC=2 NFD=4.
+      Model output normalization form is not guaranteed, so this silently corrupts
+      every word / letter / sentence count for every accented EU language.
+    affects: >
+      all length_constraints, count:*, letters:*, keywords:letter_frequency,
+      first_word:*, last_word:*, keywords:palindrome, detectable_format:bigram_wrapping
+    effort: one line; highest value-per-character change in this file
+
+  G2_unicode_regex_classes:
+    what: >
+      Replace ASCII-only character classes with Unicode properties via the `regex`
+      module (already a dependency of both Gym IF servers).
+      [a-zA-Z] -> \p{L};  \b[a-z]+\b -> \b\p{Ll}+\b;  [A-Z] -> \p{Lu}
+    why: >
+      MEASURED on "koshki spyat" (ru) and "gates koimountai" (el):
+      letters:letter_counting sees 0 of 9 and 0 of 15 real letters;
+      count:lowercase_counting matches 0 words.
+      Latin is affected too - Polish "koty spia" (accented) -> [a-zA-Z] counts 6 of 8.
+      The consequence is a VACUOUS PASS, not an error - "at most N lowercase words"
+      and "fewer than N letters" are satisfied for free. That is free reward and a
+      script-conditional shortcut the policy can learn.
+    affects: "count:lowercase_counting, letters:letter_counting, letters:letter_counting2"
+    note: >
+      IFEval-G's change_case:capital_word_frequency already uses word.isupper(),
+      which IS Unicode-correct - verified passing on ru and el. open-instruct's OTHER
+      path, if_functions.validate_frequency_capital_words, uses \b[A-Z]+\b and IS
+      broken for Cyrillic/Greek. Standardize on the IFEvalG path.
+
+  G3_sentence_segmentation:
+    what: >
+      Replace instructions_util.count_sentences / split_into_sentences with a
+      per-language segmenter. Recommended: pysbd (pure Python, no models, covers
+      en de fr es it nl pl ru el da sv fi and more).
+    why: >
+      count_sentences hardcodes nltk punkt/english.pickle. split_into_sentences
+      hardcodes English abbreviations (Mr|St|Mrs|Ms|Dr, Inc|Ltd|Jr|Sr|Co) and the
+      terminators . ? ! only. MEASURED Greek failure: a 3-question Greek paragraph
+      segments as 1 sentence, because Greek marks questions with ";" not "?".
+    terminators_by_script:
+      latin: [".", "!", "?"]
+      cyrillic: [".", "!", "?"]
+      greek: [".", "!", ";", ";"]
+    do_not_split_on:
+      greek: ["·"]   # ano teleia - a semicolon, not a full stop
+    affects: >
+      length_constraints:number_sentences, detectable_format:sentence_hyphens,
+      first_word:first_word_sent, last_word:last_word_sent,
+      keywords:keyword_specific_position, count:counting_composition
+
+  G4_word_tokenization:
+    what: >
+      count_words should tokenize as \p{L}[\p{L}\p{M}\p{Pd}']* over NFC text rather
+      than nltk RegexpTokenizer(r"\w+").
+    why: >
+      With G1 applied, plain \w+ is close to correct for L/C/G (all space-delimited),
+      but hyphenated and apostrophed forms still over-split: French aujourd'hui,
+      Dutch 's-Gravenhage, Polish bialo-czerwony.
+    affects: "length_constraints:number_words, count:count_unique, count:counting_composition"
+
+  G5_language_identification:
+    what: "Replace langdetect with fastText LID - see language_identification below."
+    why: >
+      MEASURED - langdetect returns 'ca' for "cats are great." on 40/40 runs, and the
+      library never sets DetectorFactory.seed, so near-ties may vary between calls.
+      That is an unacceptable variance source inside a GRPO group.
+    affects: "language:response_language, change_case:english_lowercase, change_case:english_capital"
+
+  G6_fail_closed:
+    what: >
+      The language checks currently `return True` on LangDetectException
+      (instructions.py:184 and :1405, commented "Count as instruction is followed").
+      Invert to return False.
+    why: >
+      An empty, emoji-only or punctuation-only response currently SATISFIES
+      "respond entirely in Bulgarian". Free reward for degenerate output.
+
+  G7_keyword_matching:
+    status: DROPPED BY DECISION - stemming is not "easily adjustable", so the
+            keyword ids ship with surface-form matching, as upstream.
+    residual_risk_accepted: >
+      MEASURED and knowingly accepted. Surface-form matching is wrong in both
+      directions in morphologically rich languages.
+      EVASION (forbidden_words - inflected forms escape the \b match):
+      ru ban "koshka" vs a response using koshki/koshkam -> PASSES;
+      pl ban "kot" vs koty/kotom -> PASSES;
+      el ban "gata" vs gates -> PASSES;
+      de ban "Hund" vs Hunde -> PASSES.
+      FREEBIE (existence - no word boundary at all):
+      de "Hund" satisfied by "Hundefutter"; fi "talo" by "Taloudessa";
+      ru "dom" by "Domashnie"; en "cat" by "Catastrophe".
+      This exists in English too but is the exception there; in Slavic, Baltic,
+      Finnic, Greek and German it is the default case. Net effect on RL:
+      keywords:forbidden_words is softer than it reads, so treat it as a weak
+      constraint rather than a hard one, and do not stack several of them on one
+      prompt expecting a conjunctive difficulty increase.
+    cheap_partial_mitigation_if_wanted_later: >
+      re.escape() on the keyword is a one-liner and is worth doing on its own -
+      KeywordChecker passes the raw keyword straight to re.search as a pattern,
+      so a keyword containing a regex metacharacter is currently live code.
+      This is a correctness/robustness fix, not a linguistic one.
+
+  G8_casefold:
+    what: "Use str.casefold() rather than str.lower(); skip case ops for tr/az if in scope."
+    why: >
+      MEASURED - Turkish dotted/dotless I is not handled by Python default casing:
+      "ISTANBUL ILIK" (with Turkish I) lowercases with a retained combining dot, and
+      "ILIK" should lower to "ilik" with dotless i. Greek final sigma: uppercase
+      Greek lowercases to a non-final sigma, never the final form. That is fine for
+      islower() checks but breaks any text == text.lower() round-trip - which is
+      exactly what open-instruct if_functions.validate_lowercase does.
+
+# ===========================================================================
+# LANGUAGE IDENTIFICATION (fastText)
+# ===========================================================================
+language_identification:
+  model: lid.176.ftz
+  reference_implementation: lid.py
+  validation_status: >
+    MEASURED. Every constant below is calibrated, not guessed. Corpus: 34 EU
+    languages x 2 parallel sets - set A named-entity-rich ("X is the capital of Y"),
+    set B generic prose with no proper nouns. 68 samples total.
+
+  obtaining_the_model: >
+    dl.fbaipublicfiles.com and huggingface.co are both blocked by this session's
+    egress policy (403 CONNECT). PyPI is permitted, and the `ftlid` wheel vendors
+    lid.176.ftz verbatim at ftlid/lid.176.ftz (938,013 bytes, 176 labels). That is
+    how the model used for these measurements was obtained. Use whichever source
+    your environment allows - it is the same file.
+
+  install_gotchas:
+    - what: "fasttext 0.9.3 is incompatible with numpy >= 2."
+      detail: >
+        model.predict() raises ValueError from np.array(probs, copy=False).
+        Pin numpy<2, or use the fasttext-numpy2 fork. Hit immediately in testing.
+    - what: "predict() raises on embedded newlines."
+      detail: >
+        'ValueError: predict processes one line at a time (remove newline)'.
+        Replace newlines with spaces first. Confirmed.
+
+  pipeline:
+    - step: script_gate
+      what: "Dominant Unicode script of alphabetic chars must match the target's script."
+      measured: >
+        34/34 agreement with the expected script, and it correctly rejects Latin
+        text claiming Greek. Deterministic and free. Greek needs nothing else -
+        el is the only in-scope language using the Greek script.
+    - step: strip_non_prose
+      what: "Remove fenced code, inline code, URLs, emails."
+      measured: >
+        Smaller effect than expected. A Greek answer with a Python block still
+        scores el @ 0.956 (vs 0.989 clean); a code-only response scores en @ 0.188,
+        below the floor, so it is rejected anyway. Keep it, but it is not load-bearing.
+    - step: prepare
+      what: "NFC, newlines -> spaces, then LOWERCASE."
+      measured: >
+        Lowercasing is load-bearing, and this was the biggest surprise in testing.
+        All-caps responses:
+          fr raw UPPER -> ca @ 0.170 (WRONG) -> lowered -> fr @ 0.980
+          ru raw UPPER -> ru @ 0.668         -> lowered -> ru @ 0.997
+          pl raw UPPER -> pl @ 0.773         -> lowered -> pl @ 0.993
+          de raw UPPER -> de @ 0.856         -> lowered -> de @ 0.970
+        Without it, change_case:all_capital and language:response_language on the
+        same prompt silently conflict - a correct all-caps French answer FAILS the
+        language check. Lowercasing removes the interaction entirely, so these two
+        ids do NOT need to go in the conflict table.
+    - step: length_gate
+      what: "Below min_chars, trust the script gate alone and stop."
+      measured: >
+        Accuracy vs truncation (48 samples, supported set):
+          15 chars 38/48, with 8 wrong ABOVE the floor
+          25 chars 44/48, with 1 wrong above the floor
+          40 chars 47/48, with 0 wrong above the floor
+          60 chars 48/48
+        Note the shape: confidence is NOT calibrated on short text - the model is
+        confidently wrong - so the floor does not protect you here. The length gate
+        is doing separate work from the floor and both are needed.
+    - step: predict
+      what: "Canonical label must equal target AND its mass >= confidence_floor."
+      note: >
+        In collapse mode, SUM probability over the group rather than comparing
+        top-1. Measured: hr/bs/sr/sh split four ways, so Bosnian text peaks at
+        sr @ 0.357 and no single label clears the floor even though the group
+        collectively holds ~0.78 of the mass.
+    - step: segment_vote
+      what: "At >= 3 sentences, require segment_ratio of them on-target."
+
+  confidence_floor: 0.40
+  confidence_floor_derivation: >
+    On the supported set the pipeline scored 48/48 with correct-prediction
+    confidence bottoming out at 0.481 (sk) and a median of 0.984. Across the wider
+    34-language set, correct predictions had min 0.410 and incorrect ones max 0.357
+    - a clean separation. 0.40 sits in that gap. The 0.50 I originally proposed is
+    measurably too high: it rejects correct Slovak, Croatian and Galician.
+  min_chars: 40
+  segment_ratio: 0.80
+  on_failure: fail_closed
+
+  supported: [en, de, fr, es, it, pt, nl, pl, cs, sk, hu, ro, fi, et, lv, lt,
+              sv, da, bg, uk, ru, el, ca, mt]
+  supported_evidence: >
+    Measured 48/48 true positives and 0/552 false positives across all
+    cross-language pairs, with the full pipeline.
+  unreliable_do_not_use_as_targets:
+    ga: "generic prose -> sk @ 0.22 (named-entity text -> ga @ 0.81). Irish is the
+         weakest EU official language in lid.176 by a wide margin."
+    nn: "generic prose -> no @ 0.29. lid.176 labels Bokmal `no`, NOT `nb`."
+    sl: "generic prose -> sr @ 0.39 while correct sl scores only 0.265. Slovene is
+         confused with Serbian, which my earlier grouping did not anticipate."
+    bs: "-> hr on BOTH sets (0.31, 0.37); never wins outright."
+    hr: "wins but weakly (0.50, 0.53) against bs/sr/sh."
+    sr: "named-entity text -> sh @ 0.31."
+  confusable_groups_measured:
+    bcs: ["hr", "bs", "sr", "sh"]
+    norwegian: ["no", "nn"]
+    note: >
+      lid.176 carries a separate `sh` (Serbo-Croatian) label, which is what makes
+      the BCS group unsplittable - four labels share the mass. Collapsing took
+      set A from 32/34 to 34/34 and set B from 30/34 to 32/34.
+      Groups I originally listed that testing did NOT support as problems:
+      cs/sk, bg/mk, es/gl/ca/pt and nl/af all resolved correctly.
+  recommendation: >
+    Sample response_language only from `supported`. If you want BCS coverage, use
+    collapse mode and accept one bcs reward target instead of three - never three
+    distinct ones, which buys ambiguity rather than signal.
+  determinism: "200/200 identical predictions on a repeated call - unlike unseeded langdetect."
+
+# ===========================================================================
+# LANGUAGE PROFILES - literals the `localize` rows draw from
+# ===========================================================================
+language_profiles:
+  en: {script: latin,    quote_pair: ['"', '"'],      postscript_marker: "P.S.",  section_word: "Section",   chars_per_word: 5.1}
+  de: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "PS", section_word: "Abschnitt", chars_per_word: 6.5}
+  fr: {script: latin,    quote_pair: ["« ", " »"], postscript_marker: "P.-S.", section_word: "Section", chars_per_word: 5.4}
+  es: {script: latin,    quote_pair: ["«", "»"], postscript_marker: "P.D.", section_word: "Seccion", chars_per_word: 5.2}
+  it: {script: latin,    quote_pair: ["«", "»"], postscript_marker: "P.S.", section_word: "Sezione", chars_per_word: 5.5}
+  pt: {script: latin,    quote_pair: ["«", "»"], postscript_marker: "P.S.", section_word: "Seccao", chars_per_word: 5.2}
+  nl: {script: latin,    quote_pair: ["„", "”"], postscript_marker: "P.S.", section_word: "Sectie", chars_per_word: 5.6}
+  pl: {script: latin,    quote_pair: ["„", "”"], postscript_marker: "PS",  section_word: "Sekcja",  chars_per_word: 6.4}
+  cs: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "PS", section_word: "Oddil",   chars_per_word: 6.0}
+  sk: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "PS", section_word: "Oddiel",  chars_per_word: 6.0}
+  sl: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "PS", section_word: "Razdelek", chars_per_word: 5.8}
+  hr: {script: latin,    quote_pair: ["„", "”"], postscript_marker: "PS", section_word: "Odjeljak", chars_per_word: 5.8}
+  hu: {script: latin,    quote_pair: ["„", "”"], postscript_marker: "Ui.", section_word: "Szakasz", chars_per_word: 6.7}
+  ro: {script: latin,    quote_pair: ["„", "”"], postscript_marker: "P.S.", section_word: "Sectiunea", chars_per_word: 5.6}
+  fi: {script: latin,    quote_pair: ["”", "”"], postscript_marker: "PS", section_word: "Osa",     chars_per_word: 8.0}
+  et: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "PS", section_word: "Osa",     chars_per_word: 6.5}
+  lv: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "P.S.", section_word: "Sadala", chars_per_word: 6.4}
+  lt: {script: latin,    quote_pair: ["„", "“"], postscript_marker: "P.S.", section_word: "Skyrius", chars_per_word: 6.5}
+  sv: {script: latin,    quote_pair: ["”", "”"], postscript_marker: "PS", section_word: "Avsnitt", chars_per_word: 5.9}
+  da: {script: latin,    quote_pair: ["»", "«"], postscript_marker: "PS", section_word: "Afsnit",  chars_per_word: 5.5}
+  ga: {script: latin,    quote_pair: ['"', '"'],      postscript_marker: "P.S.",  section_word: "Rannog",    chars_per_word: 5.5}
+  mt: {script: latin,    quote_pair: ['"', '"'],      postscript_marker: "P.S.",  section_word: "Taqsima",   chars_per_word: 5.5}
+  bg: {script: cyrillic, quote_pair: ["„", "“"], postscript_marker: "P.S.", section_word: "Раздел", chars_per_word: 5.6}
+  uk: {script: cyrillic, quote_pair: ["«", "»"], postscript_marker: "P.S.", section_word: "Розділ", chars_per_word: 5.9}
+  ru: {script: cyrillic, quote_pair: ["«", "»"], postscript_marker: "P.S.", section_word: "Раздел", chars_per_word: 5.9}
+  el: {script: greek,    quote_pair: ["«", "»"], postscript_marker: "Υ.Γ.", section_word: "Ενότητα", chars_per_word: 5.6}
+
+  alphabets:
+    latin_base: "abcdefghijklmnopqrstuvwxyz"
+    greek: "αβγδεζηθικλμνξοπρστυφχψω"
+    cyrillic_ru: "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+    cyrillic_uk: "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"
+    cyrillic_bg: "абвгдежзийклмнопрстуфхцчшщъьюя"
+  alphabet_note: >
+    Cyrillic alphabet ORDER is language-specific (uk adds g-with-upturn, ye, i, yi;
+    bg drops yo, yery, e). keywords:no_adjacent_consecutive needs the per-language
+    list, not a shared Cyrillic range. Greek final sigma is positional - exclude it
+    from the ordering.
+
+# ===========================================================================
+# PER-INSTRUCTION MATRIX - all 54 IFEval-G ids
+# ===========================================================================
+instructions:
+
+  # ---- carries over unchanged (structural / markdown / exact-string) ----
+  "detectable_format:number_bullet_lists": {status: ok}
+  "detectable_format:number_highlighted_sections": {status: ok}
+  "detectable_format:json_format": {status: ok}
+  "detectable_format:title": {status: ok}
+  "detectable_format:square_brackets": {status: ok}
+  "detectable_content:number_placeholders": {status: ok}
+  "combination:two_responses": {status: ok}
+  "combination:repeat_prompt": {status: ok, depends: [G1, G8]}
+  "copy:copy": {status: ok, depends: [G1, G8]}
+  "copy:copying_simple": {status: ok, depends: [G1, G8]}
+  "copy:copying_multiple": {status: ok, depends: [G1, G8]}
+  "copy:repeat_phrase": {status: ok, depends: [G1]}
+  "new:copy_span_idx": {status: ok, depends: [G1, G8]}
+  "paragraphs:paragraphs": {status: ok}
+  "paragraphs:paragraphs2": {status: ok}
+  "length_constraints:number_paragraphs": {status: ok}
+  "punctuation:no_comma":
+    status: ok
+    note: >
+      "," is the comma in every in-scope L/C/G language. This is the id that was
+      vacuous for CJK and Arabic; inside this script set it is genuinely fine.
+  "punctuation:punctuation_dot": {status: ok}
+  "punctuation:punctuation_exclamation": {status: ok}
+  "detectable_format:bigram_wrapping": {status: ok, depends: [G1]}
+  "keywords:palindrome":
+    status: ok
+    depends: [G1]
+    note: >
+      Pick and document one policy - are diacritics folded before reversal?
+      Recommended: no folding (NFC, exact). Low-value id; consider dropping.
+
+  # ---- localize: semantics fine, literal comes from language_profiles ----
+  "startend:quotation":
+    status: localize
+    fix: "Accept the language's quote_pair in addition to ASCII double quote."
+    why: >
+      DE low-9/high-6, FR guillemets, PL/CS/HU/RO low-9/high-9, RU/UK/EL guillemets,
+      DA reversed guillemets. A correct answer in the target language currently fails
+      a constraint it actually satisfied.
+  "detectable_content:postscript":
+    status: localize
+    fix: "postscript_marker kwarg from the profile - already a kwarg, no code change."
+  "detectable_format:multiple_sections":
+    status: localize
+    fix: "section_spliter kwarg from the profile - already a kwarg, no code change."
+  "startend:end_checker":
+    status: localize
+    fix: "end_phrase must be authored in the target language."
+    why: >
+      _ENDING_OPTIONS is English ("Any other questions?"). Forcing an English closing
+      phrase onto a Greek answer directly contradicts a response_language constraint.
+
+  # ---- patch: needs the global fixes ----
+  "length_constraints:number_words": {status: patch, depends: [G1, G4]}
+  "length_constraints:number_sentences": {status: patch, depends: [G1, G3]}
+  "length_constraints:nth_paragraph_first_word": {status: patch, depends: [G1, G8]}
+  "detectable_format:sentence_hyphens": {status: patch, depends: [G1, G3]}
+  "first_word:first_word_sent": {status: patch, depends: [G1, G3, G8]}
+  "first_word:first_word_answer": {status: patch, depends: [G1, G8]}
+  "last_word:last_word_sent": {status: patch, depends: [G1, G3, G8]}
+  "last_word:last_word_answer": {status: patch, depends: [G1, G8]}
+  "count:count_unique": {status: patch, depends: [G1, G4]}
+  "count:counting_composition": {status: patch, depends: [G1, G3, G4]}
+  "count:lowercase_counting": {status: patch, depends: [G1, G2]}
+  "letters:letter_counting": {status: patch, depends: [G1, G2]}
+  "letters:letter_counting2": {status: patch, depends: [G1, G2]}
+  "keywords:letter_frequency":
+    status: patch
+    depends: [G1, G2]
+    note: "Sample the letter from language_profiles.alphabets, never from a-z."
+  "change_case:capital_word_frequency":
+    status: patch
+    depends: [G1, G4]
+    note: "isupper() is already Unicode-correct (verified on ru, el); only tokenization needs G4."
+  "keywords:no_adjacent_consecutive":
+    status: patch
+    depends: [G1, G8]
+    note: "Needs the per-language alphabet ordering."
+  "keywords:existence": {status: ok, depends: [G1], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "keywords:frequency": {status: ok, depends: [G1], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "keywords:forbidden_words":
+    status: ok
+    depends: [G1]
+    note: >
+      Surface-form matching retained by decision. Inflection evasion is MEASURED
+      and accepted - see G7 residual_risk_accepted. Treat this id as a weak
+      constraint in ru/pl/cs/sk/sl/el/fi/hu/lt/lv/de, and do not stack several of
+      them on one prompt expecting a conjunctive difficulty increase.
+  "keywords:word_once": {status: ok, depends: [G1], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "keywords:word_count_different_numbers": {status: ok, depends: [G1], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "keywords:exclude_word_harder": {status: ok, depends: [G1], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "keywords:start_end": {status: ok, depends: [G1, G8], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "keywords:keyword_specific_position": {status: patch, depends: [G1, G3], note: "surface-form matching, see G7 residual_risk_accepted"}
+  "count:count_increment_word": {status: ok, depends: [G1], note: "surface-form matching, see G7 residual_risk_accepted"}
+
+  # ---- redefine: English is baked into the CHECK, not into the concept ----
+  "change_case:english_lowercase":
+    status: patch
+    depends: [G1, G5, G6, G8]
+    rename_to: "change_case:all_lowercase"
+    fix: 'Drop the `and langdetect.detect(value) == "en"` conjunct; keep islower().'
+    why: >
+      MEASURED - islower() is already correct for Cyrillic and Greek. Lowercase ru,
+      el, pl and de sentences all report islower()=True and all three scripts fail
+      the shipped check ONLY because of the hardcoded English gate. Language is
+      already enforced by language:response_language; conflating the two makes the
+      case constraint unsatisfiable outside English, which yields a constant-zero
+      reward and, under IFDecorator's conjunctive reward, zeroes the whole sample.
+  "change_case:english_capital":
+    status: patch
+    depends: [G1, G5, G6, G8]
+    rename_to: "change_case:all_capital"
+    fix: "Same - drop the English conjunct, keep isupper()."
+    note: >
+      Greek all-caps orthography drops accents; isupper() accepts both accented and
+      unaccented forms, so no action needed - but do NOT add a round-trip
+      text == text.upper() check, which would reject correct Greek.
+  "language:response_language":
+    status: patch
+    depends: [G5, G6]
+    fix: "Drop-in replacement implemented and validated in lid.py."
+    measured: "48/48 true positives, 0/552 false positives, all degenerate inputs rejected."
+    note: >
+      Replace the shipped LANGUAGE_CODES (30 entries) with
+      language_identification.supported (24). Sampling a language outside that set
+      injects verifier noise straight into the reward.
+
+  # ---- exclude ----
+  "detectable_format:constrained_response":
+    status: exclude
+    scripts: [latin, cyrillic, greek]
+    unless: "you translate _CONSTRAINED_RESPONSE_OPTIONS per language"
+    why: >
+      The options are module constants, not kwargs - ("My answer is yes.",
+      "My answer is no.", "My answer is maybe."). Unlike postscript / section /
+      end_checker there is no kwarg to localize through, so it needs a real code
+      change. Forcing an English literal also contradicts a response_language
+      constraint if both land on the same prompt.
+
+# ===========================================================================
+# SYNTHESIS-SIDE NOTES (IFDecorator w4_evol.py)
+# ===========================================================================
+synthesis:
+
+  eligibility:
+    what: >
+      w4_evol.py:770 does `hard_keys = [key for key in cons_dict.keys()]` and samples
+      uniformly. Replace with a filter over this matrix plus the row's target
+      language, so `exclude` ids are never emitted and `localize` ids draw their
+      literals from language_profiles.
+
+  conflicts_to_add:
+    what: >
+      INSTRUCTION_CONFLICTS is English-shaped. These pairs are contradictory only in
+      a multilingual setting and must be added.
+    pairs:
+      - ["language:response_language", "detectable_format:constrained_response"]
+      - ["language:response_language", "startend:end_checker"]
+      - ["language:response_language", "keywords:letter_frequency"]
+      - ["language:response_language", "detectable_content:postscript"]
+
+  length_calibration_bug:
+    where: "w4_evol.py:591 and :602"
+    what: >
+      `len(seed_data["response"]) * random.uniform(0.5, 1.2) // 50 * 50` takes len()
+      of a STRING - a character count - and uses it as a WORD threshold. Pre-existing
+      English-only bug that makes "at least N words" roughly 4-5x too large.
+    multilingual_impact: >
+      chars-per-word ranges from ~5.1 (en) to ~8.0 (fi), so the same code yields a
+      systematically harder constraint for agglutinative languages. Difficulty would
+      then correlate with language rather than with the instruction, which corrupts
+      the pass_rate routing in w5.
+    fix: >
+      Use count_words(response); if a character heuristic is retained, divide by
+      language_profiles[lang].chars_per_word.
+
+  keyword_sourcing:
+    what: >
+      w4_evol.get_keyword() prompts an LLM for keywords and falls back to
+      instructions_util.WORD_LIST - an English word list.
+    fix: >
+      Per-language fallback lists, and require the sampled keyword to be a surface
+      form that actually occurs in the seed response, so the G7 stem match has a
+      real target.
+
+  difficulty_routing:
+    what: >
+      pass_rate in w5 is computed with these same checkers, so every defect above
+      corrupts the easy/hard routing BEFORE any training happens. An unpatched
+      `patch` id pushes prompts into hard_pool for the wrong reason; a vacuous id
+      pushes them into easy_pool, where w4 evolves them further and compounds the
+      error across all 5 rounds.
+    recommendation: "Land the global patches before running the flywheel at all."
+
+# ===========================================================================
+# TRIPWIRES - extend probe.jsonl to catch VERIFIER leakage, not just model hacking
+# ===========================================================================
+tripwires:
+  # The two keyword probes are MONITORS, not assertions - G7 was dropped by
+  # decision, so these are expected to leak. Track the rate so that if the policy
+  # starts exploiting them the trend is visible rather than invisible.
+  - id: "keywords:forbidden_words"
+    probe: "response uses only inflected forms of the banned lemma"
+    expect: "leaks by design - alert on a RISING rate across checkpoints"
+    currently: "1.0 in ru / pl / el / de - MEASURED"
+  - id: "keywords:existence"
+    probe: "keyword appears only inside a longer unrelated word"
+    expect: "leaks by design - alert on a RISING rate across checkpoints"
+    currently: "1.0 - MEASURED"
+  - id: "count:lowercase_counting"
+    probe: "Cyrillic or Greek response with many lowercase words, constraint 'at most 0'"
+    expect: 0.0
+    currently: "1.0 without G2 - MEASURED"
+  - id: "language:response_language"
+    probe: "empty / emoji-only / punctuation-only / code-only response"
+    expect: 0.0
+    currently: "1.0 via the fail-open exception path; lid.py returns False on all four - VERIFIED"
+  - id: "language:response_language"
+    probe: "correct answer in the target language, uppercased"
+    expect: 1.0
+    currently: "fr fails without the lowercasing step (raw UPPER -> ca @ 0.170) - MEASURED"
+  - id: "length_constraints:number_words"
+    probe: "identical text submitted NFC and NFD"
+    expect: "identical score"
+    currently: "differs by up to 2.7x - MEASURED"

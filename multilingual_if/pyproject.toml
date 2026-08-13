@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multilingual-if"
+version = "0.1.0"
+description = "Multilingual instruction-following verification (Latin/Cyrillic/Greek) over the IFEval-G checkers"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "pyyaml",
+    "regex",
+    # fasttext 0.9.3 calls np.array(probs, copy=False), which raises on numpy 2.
+    # Pin here rather than leaving it to the consumer - it fails at predict() time,
+    # not at import, so it surfaces as a mid-run crash rather than a bad install.
+    "numpy<2",
+    "fasttext",
+    # Vendors lid.176.ftz verbatim. The model itself is CC-BY-SA and so is NOT
+    # committed to this repo; this package is the fallback used by setup_lid.py
+    # when dl.fbaipublicfiles.com is unreachable.
+    "ftlid",
+    "verifiable-instructions @ git+https://github.com/abukharin-nv/verifiable-instructions.git",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["multilingual_if"]
+package-dir = { multilingual_if = "." }
+
+[tool.setuptools.package-data]
+multilingual_if = ["profile.yaml"]
+
+# Kept aligned with NeMo Gym's root pyproject: this package is vendored into Gym
+# and must satisfy its CI unchanged. Do not diverge these values.
+[tool.ruff]
+line-length = 119
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["F541", "F841", "F401", "E741", "F821", "E266", "I"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
