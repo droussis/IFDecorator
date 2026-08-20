@@ -1,6 +1,7 @@
 # Decisions needed before code is written
 
-Five items. D1 and D3 block Plan 01 outright; the rest shape it.
+Seven items. D1 and D3 block Plan 01 outright; D7 blocks any copying; the rest
+shape the work.
 
 ---
 
@@ -112,3 +113,51 @@ whole mechanism.
 
 **Not vendorable:** the fastText LID model is CC-BY-SA and cannot be committed to
 an Apache-licensed repo. `setup_lid.py` resolves it at startup instead.
+
+---
+
+## D6 — A `tools` column on the pool schema
+
+**Owner decision. Blocks Plan 04, and therefore the three tool-call pivot datasets.**
+
+Tool schemas are **input** — they have to reach the model request payload — so they
+cannot ride in `checks` or `verification_meta`, both of which are verification
+metadata. Supporting tool-use data means either:
+
+- **A new `tools` column** (JSON string), or a column carrying the whole
+  Responses-API request object. Honest, and a schema change.
+- **Packing tools into an existing JSON column.** Avoids the migration, but puts
+  input data in a column named for verification, which will mislead every later
+  reader of the schema.
+
+**Recommendation: the new column.** The schema is already explicit that a column
+means one thing, and the alternative trades a one-time migration for permanent
+confusion.
+
+Also needed alongside it: a `--tools-field` flag on the generation entrypoint,
+mirroring the existing messages-field flag. `--extra-body` cannot substitute — it
+is per-run, and tools are per-row.
+
+---
+
+## D7 — Licence review before any dataset is copied
+
+**Owner or legal decision. Blocks copying, not planning.**
+
+Six of the twelve datasets have a licence question, and two are serious:
+
+| Dataset | Issue | Severity |
+|---|---|---|
+| IfEvalCode-Instruct | **no licence at all** — no tag on the card, no LICENSE file upstream, therefore all rights reserved | **blocking** — copy-and-adjust unavailable; only a clean-room reimplementation from the paper |
+| competitive_coding | `cc-by-sa-4.0` on the card | share-alike has redistribution consequences |
+| rlvr-guru | ODC-BY in aggregate, but composed of roughly thirty upstream datasets the card says to check individually | needs a per-source review, or use only the slices whose provenance is clear |
+| instruction_following | `odc-by` on the card vs Apache 2.0 claimed in the Gym README | resolve to the card |
+| Recursive-Task-Synthesis | CC-BY-4.0 data, Apache-2.0 framework | clean |
+| AceCode-V2 | MIT code, Apache-2.0 data | clean — the easiest of the set |
+
+**Asking for:** a ruling on the first three before anyone writes an adapter, and
+confirmation that the card outranks a repo README where they disagree.
+
+The cheapest path through this is to start with the datasets whose licensing is
+unambiguous, which happens to overlap almost exactly with the ones needing no
+framework change.

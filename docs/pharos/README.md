@@ -12,8 +12,19 @@ this repo's layout.
 |---|---|
 | `PLAN_01_if_verification.md` | Mechanism 1 — programmatic IF verification |
 | `PLAN_02_hybrid_synthesis.md` | Generating IF prompts with programmatic checks *and* rubrics |
-| `CHECKLISTS.md` | Tickable execution steps for both plans |
+| `PLAN_03_dataset_onboarding.md` | Strategy for the twelve target datasets, by capability tier |
+| `PLAN_04_tool_support.md` | Tool schemas in the payload, and single-step tool grading |
+| `PLAN_05_regeneration.md` | Re-running existing pools with a newer teacher |
+| `PLAN_06_language_extension.md` | Repeatable procedure for adding a language |
+| `DATASETS.md` | Per-dataset schema, mechanism, licence and Gym mapping |
+| `CHECKLISTS.md` | Tickable execution steps, phases 0–8 |
 | `DECISIONS.md` | What needs owner sign-off before code is written |
+
+## Reading order
+
+Start with `PLAN_03` §0 and `DECISIONS.md` — between them they contain everything
+that changes what the work *is*, rather than how it is done. `DATASETS.md` is
+reference, not narrative.
 
 Written against `VERIFICATION_ONBOARDING.md`. Section references (§8.4, G21, …)
 are to that document. Per `data_team/AGENTS.md`, no line numbers are cited: files

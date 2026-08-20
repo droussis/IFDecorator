@@ -181,3 +181,71 @@ Only after D4 is signed off.
       expensive per call than the verify judge
 - [ ] Re-measure reward variance after composition
 - [ ] Report to `acquisition/reports/`
+
+---
+
+## Phase 5 — dataset onboarding, T0 only (Plan 03)
+
+Five datasets, no framework change. Do these before anything in Phase 6.
+
+- [ ] **D7 licence ruling** obtained for anything not already clean
+- [ ] Take a full inventory of instruction ids across SysBench and CFBench, and
+      diff it against the 54-instruction registry. This number decides the size of
+      Phase 5 — unknown ids are either new implementations or `not_applicable`
+- [ ] Confirm the semantics of the misalignment-check marker on SysBench/CFBench
+      items before scoring any of them; a deliberate trap scored as an ordinary
+      criterion inverts its purpose
+- [ ] Adapter + pool rows for `Nemotron-RL-instruction_following`
+- [ ] **Differential check against it**: our corrected checker should reproduce the
+      existing English results and differ only where a documented correction
+      applies. Any other difference is a bug in our port
+- [ ] Adapter for SysBench and CFBench — these carry both mechanisms per row and
+      are the ready-made test of the hybrid design
+- [ ] Adapter for the terminal pivot dataset (text-in/text-out; JSON-schema check
+      plus similarity)
+- [ ] Filter the verl-format aggregate by routing key; onboard only the rule-based
+      domains
+- [ ] Port the Apache-2.0 IFEval/IFBench scorer from the verl fork and **cross-check
+      it against our own port on English rows** — two independent ports of the same
+      upstream should agree, and a disagreement means one has a bug
+- [ ] Confirm no adapter silently drops a source column
+
+## Phase 6 — tool support and pivots (Plan 04)
+
+- [ ] **D6 signed off** — the `tools` column
+- [ ] `--tools-field` on the generation entrypoint; smoke run proving tool calls
+      come back and parse, with `arguments` surviving as a JSON string
+- [ ] Confirm the new mode returns a non-empty expected-field list (G19)
+- [ ] Port the single-step comparator as an **evidence-emitting** verifier — never
+      a reward — and test against the Gym example rows, which give known-good
+      inputs and outcomes
+- [ ] Port the lenient coding-agent variant alongside the strict one
+- [ ] Adapters for the three tool-call pivot datasets
+- [ ] Validate every pivot row with the shipped validator before anything
+      downstream sees it
+- [ ] Confirm `tool_choice` is `auto` on pivot rows, not `required`
+- [ ] Measure whether a live tool-execution loop is needed at all before building one
+
+## Phase 7 — regeneration with a new teacher (Plan 05)
+
+- [ ] New suffix per teacher version; never overwrite
+- [ ] Delete stale pre-copied generation files after any pool rebuild (G22)
+- [ ] Count empty raw responses before anything downstream consumes the column (G2)
+- [ ] Per-track subsets for judging, so the 5th-input asymmetry cannot hard-error (G21)
+- [ ] Recompute the in-house pass rate over the new generation mix
+- [ ] **Do not regenerate rubric lists as part of a teacher swap** — it invalidates
+      every stored turn score, and a length-mismatched satisfied array is treated
+      as missing rather than zero
+- [ ] Report per-row grade deltas and pass-rate band migration, not just the means
+- [ ] Write a provenance manifest per pool — the flat-column path records no model
+      provenance, and after two swaps nothing says which column came from which model
+
+## Phase 8 — language extension (Plan 06)
+
+- [ ] Take `nb` first — it may be only a label mapping, since lid.176 emits `no`
+- [ ] Then `is`, `sq`, `mk`; check `mk` against its Cyrillic confusables first
+- [ ] Scope `tr` separately — it needs a casefold review before any case-based
+      constraint can be trusted
+- [ ] Treat the BCS group as its own decision; it may be unachievable with lid.176
+- [ ] For each: parallel corpus on generic prose, LID measurement, eligibility walk,
+      tests, then one synthesis round before production
