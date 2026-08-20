@@ -189,9 +189,13 @@ Only after D4 is signed off.
 Five datasets, no framework change. Do these before anything in Phase 6.
 
 - [ ] **D7 licence ruling** obtained for anything not already clean
-- [ ] Take a full inventory of instruction ids across SysBench and CFBench, and
-      diff it against the 54-instruction registry. This number decides the size of
-      Phase 5 — unknown ids are either new implementations or `not_applicable`
+- [ ] **D8 decided** — the id inventory is done: 50 distinct ids sampled, only 12
+      in our registry. Confirm the routing policy before writing the adapter
+- [ ] Optionally complete the id scan; the sample is large but not exhaustive, and
+      a full scan would likely surface 60–100+ ids
+- [ ] Carve out the mechanically checkable unfamiliar ids (the extra
+      `detectable_format:*`, `change_case:*`, `length_constraints:*` variants) and
+      route the `situation:*` / `stylistic:*` / `linguistic:*` families to the judge
 - [ ] Confirm the semantics of the misalignment-check marker on SysBench/CFBench
       items before scoring any of them; a deliberate trap scored as an ordinary
       criterion inverts its purpose
@@ -200,9 +204,13 @@ Five datasets, no framework change. Do these before anything in Phase 6.
       existing English results and differ only where a documented correction
       applies. Any other difference is a bug in our port
 - [ ] Adapter for SysBench and CFBench — these carry both mechanisms per row and
-      are the ready-made test of the hybrid design
+      are the ready-made test of the hybrid design. **Both are multi-turn**: the
+      constraints attach to the final user turn, not the first
+- [ ] **Check CFBench for evaluation contamination** before regenerating against it
+      — its rows are marked as used in an eval mix
 - [ ] Adapter for the terminal pivot dataset (text-in/text-out; JSON-schema check
-      plus similarity)
+      plus similarity). Split it: only pivot-index-0 rows carry a standalone task
+      and can feed full regeneration; the rest are single-step RL only
 - [ ] Filter the verl-format aggregate by routing key; onboard only the rule-based
       domains
 - [ ] Port the Apache-2.0 IFEval/IFBench scorer from the verl fork and **cross-check

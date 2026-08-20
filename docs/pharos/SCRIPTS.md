@@ -45,8 +45,8 @@ set in `DATASETS.md`.
 | `adapt_oda_fin` | ODA-Fin-RL-12k | T1 T2 T5 T8–T11 | `reward_model.style` is `model` — routes to the judge, not to a string match |
 | `adapt_verl_generic` | the verl aggregate, and any future verl source | T1 T2 T5 T6 T8–T11 | Per-`data_source` routing table; filter out the execution-gated prefixes |
 | `adapt_nemotron_if` | Nemotron-RL-instruction_following | T2 T5–T11 | The differential test target for the IF verifier |
-| `adapt_sysbench_cfbench` | SysBench, CFBench | T2 T3 T5 T6 T8–T11 + rubric mapping | Two mechanisms per row; the judge questions arrive unweighted |
-| `adapt_terminal_pivot` | Terminal-Pivot | T2 T5 T6 T8–T11 | Text-in/text-out; no tools |
+| `adapt_sysbench_cfbench` | SysBench, CFBench | T2 T3 T5 T6 T8–T11 + rubric mapping | **Multi-turn** — constraints attach to the final user turn. Routes each instruction id by whether our registry has it (~24%) or the judge takes it (~76%). Judge questions arrive unweighted |
+| `adapt_terminal_pivot` | Terminal-Pivot | T2 T5 T6 T8–T11 | Text-in/text-out; no tools. Splits on pivot index: index 0 carries a standalone task, deeper rows are single-step only |
 | `adapt_tool_pivot` | the three tool-call pivots | T1 T5 T6 T8–T12 | Carries tools and the expected action |
 
 Deferred until their tier opens: `adapt_acecode`, `adapt_klear_code`,
@@ -62,6 +62,18 @@ Not to be written at all unless the licence clears: `adapt_ifevalcode`.
 - **A rubric-weighting policy** for the judge questions on SysBench and CFBench.
   They arrive unweighted, and the reward arithmetic is weight-based. A flat weight
   is a legitimate choice; it should be a recorded one.
+- **An instruction-id router.** Given an id, decide checker / judge / reject, from
+  a table rather than a hardcoded list — three quarters of the ids on the constraint
+  datasets are outside our registry, and any new source will add more.
+
+### One conversion worth its own entry
+
+`scenario_to_conversation.py` — the conversational tool-use pivots carry a
+self-contained policy system prompt and opening customer message. Gym's
+conversational tool-use simulation environment can consume that content to produce
+**fresh multi-turn trajectories** rather than single-step comparisons. This is the
+only path in the catalogue from imported pivot data to a renewable source that does
+not require building new infrastructure, and it is worth a script of its own.
 
 ## B. Verification
 

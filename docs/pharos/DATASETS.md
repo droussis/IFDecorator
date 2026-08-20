@@ -136,13 +136,13 @@ capability or a licence decision.
 | 2 | PrimeIntellect/Skywork-OR1-RL-Data | 105.1K | Apache-2.0 | maths answer | full | low | **ready** |
 | 3 | JustinTX/WildSci | 56.8K | CC-BY-4.0 | MCQ letter | full | low | **ready** |
 | 4 | OpenDataArena/ODA-Fin-RL-12k | 12.4K | Apache-2.0 (22 mixed upstream) | short answer, judge-graded | full | low | **ready** |
-| 5 | nvidia/Nemotron-RL-instruction_following | ~78 MB | `odc-by` | IF constraint spec | full | low | **ready** |
-| 6 | nvidia/Nemotron-RL-SysBench-v1 | — | CC-BY-4.0 | **IF spec + rubric** | full | med | **ready** |
-| 7 | nvidia/Nemotron-RL-CFBench-v1 | 1.1K | CC-BY-4.0 | **IF spec + rubric** | full | med | **ready** |
+| 5 | nvidia/Nemotron-RL-instruction_following | 46,391 | `odc-by` | IF constraint spec | full | low | **ready** |
+| 6 | nvidia/Nemotron-RL-SysBench-v1 | 1–10K, unconfirmed | CC-BY-4.0 | **IF spec + rubric**, multi-turn | full | med | **ready** |
+| 7 | nvidia/Nemotron-RL-CFBench-v1 | 1,105 | CC-BY-4.0 | **IF spec + rubric**, multi-turn | full | med | **ready** |
 | 8 | nvidia/Nemotron-RL-Agentic-Terminal-Pivot-v1 | 31.1K | CC-BY-4.0 | expected command batch | pivot | med | **ready** |
-| 9 | nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1 | 97.0K | CC-BY-4.0 | expected tool call | pivot | med | needs tools |
+| 9 | nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1 | 97.0K | CC-BY-4.0 | expected tool call **+ reusable scenario** | pivot → full | med | needs tools |
 | 10 | nvidia/Nemotron-RL-Agentic-SWE-Pivot-v1 | 50.3K | CC-BY-4.0 | expected tool call | pivot | med | needs tools |
-| 11 | nvidia/Nemotron-RL-Agentic-Function-Calling-Pivot-v1 | 9.6K | CC-BY-4.0 | expected tool call | pivot | med | needs tools |
+| 11 | nvidia/Nemotron-RL-Agentic-Function-Calling-Pivot-v1 | 9,600 | CC-BY-4.0 | expected tool call | pivot | med | needs tools |
 | 12 | IFM/guru-RL-v1.5 | ~108.8K **unverified** | MIT | mixed by domain | full | high | partial — verify first |
 | 13 | AmanPriyanshu/rlvr-guru-raw-data-extended | 150,000 + 221,332 **confirmed** | ODC-BY over ~30 sources | mixed by domain | full | low for the 82.9% | **124,316 rows ready** |
 | 14 | TIGER-Lab/AceCode-V2-122K | 122.6K | Apache-2.0 data, MIT code | Python asserts | full | med | blocked: execution |
@@ -270,8 +270,10 @@ stratification key.
 
 ## nvidia/Nemotron-RL-instruction_following
 
-Roughly 78 MB of JSONL, `odc-by` on the card — which contradicts the Apache-2.0
-claim in the Gym server README. The card is the safer authority.
+**46,391 rows**, confirmed independently by the dataset card and by metrics
+computed locally from the downloaded file. Single-turn throughout. Licence is
+`odc-by` — the prompts derive from a corpus under that licence, and the Apache-2.0
+label in the Gym config is simply stale for the data.
 
 ```jsonc
 {"id": 17616,
@@ -306,13 +308,52 @@ YES/NO judge questions.
  "tools": []}
 ```
 
-Neither has a verifier in the Gym checkout — the referenced agent is not present —
-so the verifier is ours to write, which is the IF plan plus the existing rubric
-mechanism rather than new machinery.
+CFBench is 1,105 rows; SysBench's exact count is unresolved. Both are **genuinely
+multi-turn** — confirmed by sampling role sequences, two to nine prior turns of
+realistic conversation before a final constrained user turn. The constraints attach
+to that last turn. An earlier reading of these as single-turn was wrong.
 
-CFBench is multilingual in English, Arabic, Hindi, Chinese, Japanese and Korean.
-**Only the English slice is verifiable by our checker**; the rest are in scripts
-deliberately out of scope.
+Neither has a verifier in the Gym checkout — the referenced agent is not present —
+so the verifier is ours to write.
+
+### The instruction-id inventory, and what it implies
+
+This was the main unknown. Stratified sampling of the raw files gives:
+
+| | Distinct ids sampled | In our registry | **Outside it** |
+|---|---:|---:|---:|
+| SysBench | 25 | 11 (44%) | **14 (56%)** |
+| CFBench | 44 | 11 (25%) | **33 (75%)** |
+| Union | 50 | 12 (24%) | **38 (76%)** |
+
+The gap is not a tail of variants — it is **whole families that IFEval never had**:
+
+- `situation:*` — task_specific, audience_alignment, role_based, environment_setting, temporal_context, emotional_alignment
+- `stylistic:*` — tone_formality, voice, politeness, sensory_detail, emotive_adjectives, sentence_tone_consistency
+- `linguistic:*` — grammatical_mood, pragmatic_context, speech_act, syntactic_pattern
+- plus further `detectable_format:*`, `change_case:*` and `length_constraints:*` variants
+
+A full scan would likely surface 60–100+ distinct ids. **Implementing checkers for
+all of them is a multi-week effort**, and worse, most of them should not be
+programmatic at all: "tone formality" and "emotional alignment" are judgement calls
+wearing an instruction-id costume.
+
+**The datasets already answer this.** Each row carries `llm_judge` items alongside
+`instructions`. So the ~76% we cannot check programmatically route to the rubric
+mechanism, and the ~24% we can route to the checker. That is not a workaround — it
+is the hybrid design arriving from the data rather than from us, and it is a strong
+independent argument for the split. See D8.
+
+### Two flags
+
+`is_misalignment_check` is true on only about 2% of sampled instructions. It appears
+to mark adversarial constraints — testing whether a model over-applies a rule
+against conflicting context — but **no scoring code exists locally to confirm the
+semantics**. Scoring a trap as an ordinary criterion would invert its purpose.
+
+CFBench rows carry `used_in: ["ultra_v3"]`. **Check for evaluation contamination
+before regenerating against it** — a training set built from an eval slice is worse
+than no training set.
 
 Preprocessing: T2, T3, T5, T6, T8, T9, T10, T11, plus mapping `llm_judge` items
 onto rubric criteria — they arrive unweighted, so a weighting policy is needed.
@@ -334,16 +375,26 @@ The action is a JSON blob emitted as assistant **text**, and the terminal histor
 is already flattened into the prompt. Gradeable by JSON-schema validation plus
 similarity against the expert keystrokes.
 
+31,111 rows, drawn from 630 containerised terminal tasks and 2,716 verifier-passing
+trajectories — a median of about 45 pivots per task.
+
 It is still a single-step slice, so it is **Pivot class for regeneration purposes**
-— we can generate one action per row, not a trajectory. But it needs no framework
-change to do so, which makes it the cheapest agentic-flavoured data available.
+— one action per row, not a trajectory. But it needs no framework change to score,
+which makes it the cheapest agentic-flavoured data available.
+
+**Only rows at pivot index 0 carry a standalone task.** Deeper pivots depend on the
+specific container state their trajectory produced, which we do not have. So full
+regeneration is available for at most the ~2,716 trajectory-opening rows, and the
+other ~28K are single-step RL only.
 
 ---
 
 # Group B — pivots: imported RL data, not a renewable source
 
-Three tool-call pivot datasets, all CC-BY-4.0, all consumed by the same comparator.
-SWE 50.3K, Conversational Tool Use 97.0K, Function Calling 9.6K.
+Three tool-call pivot datasets, all CC-BY-4.0, all consumed by the same comparator:
+SWE 50.3K, Conversational Tool Use 97.0K, Function Calling 9,600. Note both the SWE
+and conversational cards state larger figures than the live files carry — trust the
+files.
 
 ```jsonc
 {"trajectory_id": "...", "info": {"turn": 4, "step": 9, "depth": 2},
@@ -367,11 +418,24 @@ word overlap against a threshold. Parallel calls are matched bipartitely.
 extracted at data-build time. What they need is tool schemas in the request
 payload, which is the one framework change.
 
-**What they cannot do** is give us fresh trajectories. The prefix is one model's
-path through a state space; regenerating from it yields an action at a state our
-model would not necessarily have reached. Treat these as imported RL data with a
-fixed shelf life, and note that any SFT derived from them teaches call formatting
-rather than task competence.
+**What they cannot do**, as pivots, is give us fresh trajectories. The prefix is one
+model's path through a state space; regenerating from it yields an action at a state
+our model would not necessarily have reached.
+
+### But two of the three retain a reusable original task
+
+This is the useful nuance, and it differs per dataset:
+
+| | Original task present? | Path to full regeneration |
+|---|---|---|
+| **Conversational Tool Use** | yes — the policy system prompt plus the opening customer message, self-contained | **Strongest candidate.** Gym already ships a conversational tool-use simulation environment with domain, policy and scenario generation plus user and tool simulators. It can consume this policy/scenario content directly and produce fresh multi-turn trajectories — no new infrastructure |
+| **SWE** | yes — the original GitHub issue is the first user turn | Possible, but grading fresh trajectories needs a SWE-bench-style harness: repo checkout, patch application, test suite. A genuine capability gap, not a data-prep step |
+| **Function Calling** | **unverified** — structurally analogous to the other two, but not confirmed this pass | Spot-check before relying on it |
+
+So the conversational set is worth treating as two datasets in one: a pivot slice
+usable immediately, and a scenario corpus that an existing simulator can turn into
+renewable multi-turn data. That is the single best regeneration opportunity in the
+whole catalogue.
 
 Preprocessing: T1, T5 (the expected action into the target field), T6 (comparator
 knobs), T8, T9, T10, T11, T12 (tools into their own column). Validate every row

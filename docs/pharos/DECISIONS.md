@@ -1,6 +1,6 @@
 # Decisions needed before code is written
 
-Seven items. D1 and D3 block Plan 01 outright; D7 blocks any copying; the rest
+Eight items. D1 and D3 block Plan 01 outright; D7 blocks any copying; the rest
 shape the work.
 
 ---
@@ -161,3 +161,42 @@ confirmation that the card outranks a repo README where they disagree.
 The cheapest path through this is to start with the datasets whose licensing is
 unambiguous, which happens to overlap almost exactly with the ones needing no
 framework change.
+
+---
+
+## D8 — What to do with instruction ids outside our registry
+
+**Owner decision. Sizes the SysBench/CFBench work, and it is the largest single
+estimate in the plan.**
+
+Sampling the two constraint datasets found **50 distinct instruction ids, of which
+only 12 (24%) exist in our registry**. The remaining 38 include whole families
+IFEval never had — `situation:*`, `stylistic:*`, `linguistic:*` — and a full scan
+would likely surface 60–100+ ids in total.
+
+| Option | Cost | Consequence |
+|---|---|---|
+| **A. Route non-registry ids to the rubric judge** *(recommended)* | near zero — the rows already carry `llm_judge` items | ~76% of constraints graded by judgement rather than by code. Honest, since most of them are judgement calls anyway |
+| **B. Implement the missing checkers** | multi-week, and growing with every new source | more deterministic reward, but several of these ids are not deterministically checkable even in principle |
+| **C. Drop rows whose ids we cannot check** | near zero | discards most of both datasets, including the part that makes them interesting |
+
+**Recommendation: A, with a small carve-out.** Some of the unfamiliar ids *are*
+mechanically checkable — the extra `detectable_format:*`, `change_case:*` and
+`length_constraints:*` variants are close relatives of things we already implement.
+Take those; route the `situation:*`, `stylistic:*` and `linguistic:*` families to
+the judge without apology.
+
+Two things make this more than a fallback:
+
+- "Tone formality" and "emotional alignment" are judgement calls wearing an
+  instruction-id costume. Implementing a checker for them would produce a
+  deterministic reward that is confidently wrong, which is worse than a judge that
+  is uncertain and says so.
+- **The datasets shipped both mechanisms per row.** The hybrid split we were
+  planning to design is arriving from the data instead. That is independent
+  evidence the split is the right shape, and D4's phase-2 measurement now has a
+  ready-made corpus to run on.
+
+**Asking for:** approval of the A-plus-carve-out route, and a decision on whether a
+full id scan is worth doing before or after the first end-to-end run. The sample is
+large but not exhaustive.
