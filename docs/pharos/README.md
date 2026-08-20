@@ -16,15 +16,17 @@ this repo's layout.
 | `PLAN_04_tool_support.md` | Tool schemas in the payload, and single-step tool grading |
 | `PLAN_05_regeneration.md` | Re-running existing pools with a newer teacher |
 | `PLAN_06_language_extension.md` | Repeatable procedure for adding a language |
-| `DATASETS.md` | Per-dataset schema, mechanism, licence and Gym mapping |
+| `DATASETS.md` | The 19-dataset catalogue: schema, target, regeneration class, licence |
+| `SCRIPTS.md` | Every script to write or adapt, with placement and write order |
 | `CHECKLISTS.md` | Tickable execution steps, phases 0–8 |
 | `DECISIONS.md` | What needs owner sign-off before code is written |
 
 ## Reading order
 
-Start with `PLAN_03` §0 and `DECISIONS.md` — between them they contain everything
-that changes what the work *is*, rather than how it is done. `DATASETS.md` is
-reference, not narrative.
+Start with `DATASETS.md`'s catalogue table and `DECISIONS.md` — between them they
+contain everything that changes what the work *is*, rather than how it is done.
+Then `PLAN_03` §0 for the sequencing argument and `SCRIPTS.md` for the build order.
+The remaining plans are reference.
 
 Written against `VERIFICATION_ONBOARDING.md`. Section references (§8.4, G21, …)
 are to that document. Per `data_team/AGENTS.md`, no line numbers are cited: files
