@@ -20,6 +20,10 @@ extend-exclude = '''
   # Vendored into NeMo Gym, which enforces ruff at line-length 119. Formatting it
   # with black/88 here would break byte-identity with the copy Gym's CI lints.
   | multilingual_if
+  # Vendored FROM NeMo Gym. comparator.py and validate.py are byte-identical to
+  # their sources so they can be re-synced with a plain cp; reformatting them
+  # would silently break that.
+  | pivot_tools
 )/
 '''
 
@@ -48,7 +52,8 @@ exclude = [
     ".tox",
     "logs",
     "data",
-    "multilingual_if"
+    "multilingual_if",
+    "pivot_tools"
 ]
 
 [tool.mypy]

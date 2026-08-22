@@ -1,0 +1,202 @@
+# Decisions needed before code is written
+
+Eight items. D1 and D3 block Plan 01 outright; D7 blocks any copying; the rest
+shape the work.
+
+---
+
+## D1 — Sign-off on IFEval as new scope
+
+**Owner decision. Blocks everything.**
+
+`AGENT_RUNBOOK.md` §1.3 decision 7 excludes IFEval, InverseIFEval and
+MultiChallenge, and §1.3 decisions are marked "do not relitigate". The stated
+reason is "need framework changes (tools in the payload) or have rubric-shaped
+goldens".
+
+Neither applies to this proposal: no framework change, no new pool column, and the
+goldens are programmatic rather than rubric-shaped. But the exclusion is explicit
+and this is an extension of scope, not a correction of an error.
+
+**Asking for:** approval to add `verification_type: "instruction_following"` on the
+`constraint` track, and a target size for the slice.
+
+---
+
+## D2 — Language coverage for the 8 gap languages
+
+**Owner decision. Shapes Plan 01's scope.**
+
+22 of the 30 `TARGET_LANGUAGES` are verifiable today. The gap is
+`hr is nb sl sr tr mk sq`.
+
+| Option | Cost | Risk |
+|---|---|---|
+| **A. Ship 22, emit `not_applicable` for the rest** *(recommended)* | none | those 8 get no IF rows; the pool is thinner there |
+| **B. Extend coverage first** | measurement work per language; `hr`/`sl`/`sr` may be unfixable, since lid.176's separate `sh` label splits the mass four ways | delays the slice |
+| **C. Ship all 30 unverified** | none up front | **do not.** A false FAIL enters `{check_results}` as evidence the judge is instructed to weigh. Wrong evidence is worse than no evidence |
+
+Option A degrades to "no evidence", which the framework already handles: rows with
+no applicable checks get the `NO_CHECKS` sentinel rather than an empty string, so
+`--skip-empty-fields` never drops them.
+
+Two cheap partial fixes regardless of choice:
+
+- **`nb` is a label mismatch, not a coverage gap.** lid.176 emits `no` for Bokmål.
+  A code-mapping entry may be all Norwegian needs — worth an hour to check.
+- **`tr` needs a casefold review before it can be trusted at all.** Python's default
+  casing is wrong for the dotted/dotless I, which affects every case-based check.
+
+---
+
+## D3 — Will `run_verifiers.py` ever run in production?
+
+**Owner decision. Determines whether Plan 01 is worth building.**
+
+Per §14.4, the production judging phase maps `check_results:checks` — the raw check
+*specs*, not executed *results* — and never invokes `run_verifiers.py`. The full
+`generate → split_raw_responses → run_verifiers → judge` chain exists only in
+`smoke_test_verifiable.sh`, with the note "nobody runs programmatic checks
+mid-vacation".
+
+If that is permanent, an IF verifier is **inert**: the judge is told which
+instructions would have been checked, never what was found, and the entire value
+of a corrected multilingual checker is lost.
+
+**Asking for:** confirmation that the production chain will invoke `run_verifiers.py`
+for IF rows. If not, Plan 01 should not be built — the honest alternative is to
+express IF constraints as rubric `hard_rule` items instead, which the framework
+already supports and which needs no new code.
+
+This is the single most consequential question in either plan.
+
+---
+
+## D4 — How a hybrid row is graded
+
+**Owner decision. Blocks Plan 02 phase 3 only; phases 1–2 proceed without it.**
+
+§1 states the three reward tracks are "never mixed inside one training run". A row
+carrying both programmatic checks and rubric criteria departs from that. Options A
+/ B / D are tabulated in `PLAN_02_hybrid_synthesis.md` §4; option C (two rows) is
+blocked by `prompt_hash` dedupe.
+
+**Recommendation:** do not decide this yet. Ship phase 1 (option A, no schema
+change), then measure whether rubric criteria add reward variance the programmatic
+checks do not already capture. For IF prompts the overlap is likely to be large —
+the rubric creation template already mandates a weight-9–10 `hard_rule` for
+negative user constraints, which is exactly what the programmatic checker covers.
+
+A hybrid track that adds a rubric-judge pass per row without adding variance costs
+real money and buys nothing.
+
+---
+
+## D5 — Where the vendored verifier lives, and how it stays in sync
+
+**Technical, low stakes, but decide before writing.**
+
+The owner's preference is copy-and-adjust over an external dependency. Two
+consequences:
+
+1. **`verifiers/instruction_following/` is a subpackage**, not a flat module.
+   `verifiers/` is three files of ~230 lines total; the vendored core is larger
+   than all of them. A directory keeps `verifiers/` readable and marks the
+   boundary.
+2. **`PROVENANCE.md` records source, commit and a re-sync recipe**, following the
+   pattern already used for vendored code elsewhere in the org's repos.
+
+The one thing that must not drift is `profile.yaml`: it is the shared contract
+between synthesis and verification, and if the copies diverge, synthesis emits
+constraints verification cannot score. Keeping one file, copied verbatim, is the
+whole mechanism.
+
+**Not vendorable:** the fastText LID model is CC-BY-SA and cannot be committed to
+an Apache-licensed repo. `setup_lid.py` resolves it at startup instead.
+
+---
+
+## D6 — A `tools` column on the pool schema
+
+**Owner decision. Blocks Plan 04, and therefore the three tool-call pivot datasets.**
+
+Tool schemas are **input** — they have to reach the model request payload — so they
+cannot ride in `checks` or `verification_meta`, both of which are verification
+metadata. Supporting tool-use data means either:
+
+- **A new `tools` column** (JSON string), or a column carrying the whole
+  Responses-API request object. Honest, and a schema change.
+- **Packing tools into an existing JSON column.** Avoids the migration, but puts
+  input data in a column named for verification, which will mislead every later
+  reader of the schema.
+
+**Recommendation: the new column.** The schema is already explicit that a column
+means one thing, and the alternative trades a one-time migration for permanent
+confusion.
+
+Also needed alongside it: a `--tools-field` flag on the generation entrypoint,
+mirroring the existing messages-field flag. `--extra-body` cannot substitute — it
+is per-run, and tools are per-row.
+
+---
+
+## D7 — Licence review before any dataset is copied
+
+**Owner or legal decision. Blocks copying, not planning.**
+
+Six of the twelve datasets have a licence question, and two are serious:
+
+| Dataset | Issue | Severity |
+|---|---|---|
+| IfEvalCode-Instruct | **no licence at all** — no tag on the card, no LICENSE file upstream, therefore all rights reserved | **blocking** — copy-and-adjust unavailable; only a clean-room reimplementation from the paper |
+| competitive_coding | `cc-by-sa-4.0` on the card | share-alike has redistribution consequences |
+| rlvr-guru | ODC-BY in aggregate, but composed of roughly thirty upstream datasets the card says to check individually | needs a per-source review, or use only the slices whose provenance is clear |
+| instruction_following | `odc-by` on the card vs Apache 2.0 claimed in the Gym README | resolve to the card |
+| Recursive-Task-Synthesis | CC-BY-4.0 data, Apache-2.0 framework | clean |
+| AceCode-V2 | MIT code, Apache-2.0 data | clean — the easiest of the set |
+
+**Asking for:** a ruling on the first three before anyone writes an adapter, and
+confirmation that the card outranks a repo README where they disagree.
+
+The cheapest path through this is to start with the datasets whose licensing is
+unambiguous, which happens to overlap almost exactly with the ones needing no
+framework change.
+
+---
+
+## D8 — What to do with instruction ids outside our registry
+
+**Owner decision. Sizes the SysBench/CFBench work, and it is the largest single
+estimate in the plan.**
+
+Sampling the two constraint datasets found **50 distinct instruction ids, of which
+only 12 (24%) exist in our registry**. The remaining 38 include whole families
+IFEval never had — `situation:*`, `stylistic:*`, `linguistic:*` — and a full scan
+would likely surface 60–100+ ids in total.
+
+| Option | Cost | Consequence |
+|---|---|---|
+| **A. Route non-registry ids to the rubric judge** *(recommended)* | near zero — the rows already carry `llm_judge` items | ~76% of constraints graded by judgement rather than by code. Honest, since most of them are judgement calls anyway |
+| **B. Implement the missing checkers** | multi-week, and growing with every new source | more deterministic reward, but several of these ids are not deterministically checkable even in principle |
+| **C. Drop rows whose ids we cannot check** | near zero | discards most of both datasets, including the part that makes them interesting |
+
+**Recommendation: A, with a small carve-out.** Some of the unfamiliar ids *are*
+mechanically checkable — the extra `detectable_format:*`, `change_case:*` and
+`length_constraints:*` variants are close relatives of things we already implement.
+Take those; route the `situation:*`, `stylistic:*` and `linguistic:*` families to
+the judge without apology.
+
+Two things make this more than a fallback:
+
+- "Tone formality" and "emotional alignment" are judgement calls wearing an
+  instruction-id costume. Implementing a checker for them would produce a
+  deterministic reward that is confidently wrong, which is worse than a judge that
+  is uncertain and says so.
+- **The datasets shipped both mechanisms per row.** The hybrid split we were
+  planning to design is arriving from the data instead. That is independent
+  evidence the split is the right shape, and D4's phase-2 measurement now has a
+  ready-made corpus to run on.
+
+**Asking for:** approval of the A-plus-carve-out route, and a decision on whether a
+full id scan is worth doing before or after the first end-to-end run. The sample is
+large but not exhaustive.
