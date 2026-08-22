@@ -126,14 +126,20 @@ reward.
 
 ## 4. What to copy
 
+**Already vendored** into `pivot_tools/` in this repo — the comparator verbatim, the
+action extractor decoupled from the framework's response type, the pivot-row
+validator verbatim, and an evidence wrapper that re-expresses a comparison as
+evidence rather than a reward. 32 tests, including replaying real Gym pivot rows
+(both the single and the parallel tool-call shapes) against themselves.
+
+Still to copy when the SWE pivots are onboarded:
+
 | From | Gives | Drags in |
 |---|---|---|
-| the single-step server's `common/verification_utils.py` | the whole comparator: name match, recursive argument comparison, Jaccard similarity, parallel-call matching | nothing — stdlib only |
-| the same server's `common/response_utils.py` | `extract_action()`, normalising a model response into a message / function-call / function-call-batch action | the models above |
-| `swe_pivot`'s app | the lenient coding-agent variant | nothing extra |
+| `swe_pivot`'s app | the lenient coding-agent variant: tool-name category equivalence, path-suffix matching, sequence similarity | nothing extra |
 | the Responses-API tool and tool-call types from `nemo_gym/openai_utils.py` | strict typing for `tools`, `function_call`, `function_call_output` | the `openai` SDK's type module — typing only, no network |
 | the simplest agent's app | the full tool-execution loop, for when a live loop is actually needed | the Gym agent base class and its trajectory bookkeeping, both strippable |
-| the pivot skill's `validate_pivot_dataset.py` and its four reference converters | row-shape validation and worked trajectory→pivot conversions | nothing |
+| the pivot skill's four reference converters | worked trajectory→pivot conversions; borrow from rather than run, they carry dataset-specific assumptions | nothing |
 
 Explicitly **not** worth copying for this purpose: the MCP auto-exposure layer, the
 sandbox module, and the observability machinery in the model-server base class.

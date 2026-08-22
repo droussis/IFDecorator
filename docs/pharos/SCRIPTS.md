@@ -16,7 +16,8 @@ The split matters because roughly half of this list is per-source glue with a sh
 half-life, and the other half is durable machinery.
 
 Status column: **new** = written from scratch, **adapt** = copy-and-adjust from a
-named source, **extend** = an additive change to an existing framework file.
+named source, **extend** = an additive change to an existing framework file,
+**done** = already vendored into this repo.
 
 ---
 
@@ -82,7 +83,7 @@ Inside the framework, under the verifiers package.
 | Script | Status | Notes |
 |---|---|---|
 | `verifiers/instruction_following/` | adapt | The multilingual IF checker. Reward path removed; emits evidence with per-instruction `pass` / `fail` / `not_applicable`. Plan 01 |
-| `verifiers/tool_call.py` | adapt | Single-step tool-argument comparator, re-expressed as evidence. Source is pure standard-library Python and drags in nothing. Plan 04 |
+| `verifiers/tool_call.py` | **done** | Vendored in this repo as `pivot_tools/` — the comparator verbatim, an action extractor decoupled from the framework, and an evidence wrapper. 32 tests, including replaying real Gym pivot rows against themselves |
 | `verifiers/tool_call_lenient.py` | adapt | The coding-agent variant: tool-name category equivalence, path-suffix matching, sequence similarity. Worth having separately — strict matching punishes paraphrase rather than error |
 | `verifiers/terminal_action.py` | new | JSON-schema validation of a command batch plus similarity against the expert keystrokes. Small, and unlocks a whole dataset at T0 |
 | `run_verifiers.py` | extend | One dispatch branch per new `checks` key, plus its entry in the pass/fail histogram |
@@ -116,7 +117,7 @@ Mostly separate toolkit; these are what make a silent failure visible.
 | Script | Status | Notes |
 |---|---|---|
 | `validate_pool_rows.py` | adapt | Port of the row validator: language in the verifiable set, id/kwargs length agreement, no ineligible constraint, no conflicting pair, rubrics bound to their constraint, non-empty prompt. Run at every stage boundary |
-| `validate_pivot_dataset.py` | adapt | Copy from the Gym skill. Row shape, expected-action schema, agent-ref alignment |
+| `validate_pivot_dataset.py` | **done** | Vendored verbatim as `pivot_tools/validate.py`; runs standalone |
 | `instruction_id_inventory.py` | new | Enumerate distinct instruction ids across a dataset and diff against our registry. **Write this first** — it is what sizes the constraint-dataset work, and the answer is currently unknown |
 | `pass_rate_report.py` | adapt | Per-language and per-source difficulty distribution. The primary diagnostic: a distribution crushed toward 0 or 1 relative to its peers means an unsatisfiable or vacuous constraint, not a model result |
 | `count_empty_generations.py` | new | Counts empty raw responses per label after every generation phase. A truncated thinking-model response is indistinguishable from a refusal, and this is the standing check for it |

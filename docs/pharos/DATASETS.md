@@ -166,6 +166,37 @@ except two, and those two are bilingual with Chinese or multilingual in scripts
 deliberately out of our scope. Language coverage comes from our own synthesis and
 from translation, not from this catalogue.
 
+## Which NeMo Gym server consumes what
+
+Where a server exists, its code is the ground truth for row shape and scoring —
+prefer it over the dataset card. Where none exists, the verifier is ours to write.
+
+| Dataset | Gym resources server | How it scores |
+|---|---|---|
+| Nemotron-RL-instruction_following | `instruction_following` | the standard instruction registry; binary or fractional |
+| Nemotron-RL-Agentic-SWE-Pivot-v1 | `single_step_tool_use_with_argument_comparison` (a `swe_pivot` config) | tool-name match + recursive argument comparison |
+| Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1 | same server, own config | same comparator, plus parallel-call scoring |
+| Nemotron-RL-Agentic-Function-Calling-Pivot-v1 | same server, own config | same comparator |
+| Nemotron-RL-Agentic-Terminal-Pivot-v1 | `terminus_judge` — named by the card, **not** wired by any local config | JSON-schema validation + keystroke similarity, optional judge |
+| Nemotron-RL-coding-competitive_coding | `code_gen` | extracts code, runs it against the unit tests in a distributed harness |
+| Nemotron-RL-SysBench-v1 | **none** | — |
+| Nemotron-RL-CFBench-v1 | **none** | — |
+| everything else in the catalogue | **none** | — |
+
+Three notes that matter for integration:
+
+- A richer, deliberately **lenient** SWE comparator also exists in the checkout as
+  its own server — tool-name category equivalence, path-suffix matching, sequence
+  similarity, diff-size shaping — but it is not wired to the HF dataset id. Worth
+  copying alongside the strict one: a coding agent has many valid ways to express
+  one edit, and strict matching penalises paraphrase rather than error.
+- `terminal_multi_harness` is a **different** server and does not consume the
+  terminal pivot dataset; its contract wants structured actions and declared tools,
+  which those rows do not carry. Do not wire them together.
+- The conversational tool-use *simulation* server is likewise distinct from the
+  comparator that scores the conversational pivots — and it is the one that can
+  turn those rows into fresh multi-turn trajectories.
+
 ---
 
 # Group A — full regeneration, no execution needed
@@ -360,8 +391,10 @@ onto rubric criteria — they arrive unweighted, so a weighting policy is needed
 
 ## nvidia/Nemotron-RL-Agentic-Terminal-Pivot-v1
 
-31.1K rows, CC-BY-4.0. Despite the name, **this is not a pivot in the sense that
-matters** — it needs no tool payload and no container.
+31,111 rows, CC-BY-4.0, drawn from 630 containerised terminal tasks and 2,716
+verifier-passing trajectories — a median of about 45 pivots per task. Despite the
+name, **this is not a pivot in the sense that matters** — it needs no tool payload
+and no container.
 
 ```jsonc
 {"uuid": "...", "task_name": "...",
@@ -374,9 +407,6 @@ matters** — it needs no tool payload and no container.
 The action is a JSON blob emitted as assistant **text**, and the terminal history
 is already flattened into the prompt. Gradeable by JSON-schema validation plus
 similarity against the expert keystrokes.
-
-31,111 rows, drawn from 630 containerised terminal tasks and 2,716 verifier-passing
-trajectories — a median of about 45 pivots per task.
 
 It is still a single-step slice, so it is **Pivot class for regeneration purposes**
 — one action per row, not a trajectory. But it needs no framework change to score,

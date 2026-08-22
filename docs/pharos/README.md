@@ -36,6 +36,7 @@ and symbols only.
 
 | Here | Role |
 |---|---|
+| `pivot_tools/` | vendored single-step tool-call grading: the NeMo Gym comparator, the pivot-row validator, and an evidence wrapper replacing its reward return |
 | `multilingual_if/` | 54 IFEval-G checkers corrected for Latin/Cyrillic/Greek, with `profile.yaml` as the per-constraint/per-language eligibility matrix |
 | `multilingual_if/lid.py` | calibrated fastText language identification |
 | `synthesis/prompts.py` | the flywheel's prompt templates, multilingual-adapted |
